@@ -34,7 +34,7 @@ class MySQLer
      * Object instance link
      * @var object
      */
-    private static $_instance;
+    private static $_instance = null;
 
     /**
      * Holds the last error message
@@ -76,31 +76,31 @@ class MySQLer
      * MySQL host name
      * @var string
      */
-    private $hostname;
+    private string $hostname;
 
     /**
      * MySQL user name
      * @var string
      */
-    private $username;          
+    private string $username;          
     
     /**
      * MySQL password
      * @var string
      */
-    private $password;
+    private string $password;
     
     /**
      * MySQL database name
      * @var string
      */
-    private $database;
+    private string $database;
     
     /**
      * MySQL connection link
      * @var object
      */
-    private $handler;
+    private ?mysqli $handler = null;
 
     /**
      * Class constructor
@@ -117,22 +117,21 @@ class MySQLer
         $this->password = $data['password'];
         $this->database = $data['database'];
 
-        $this->handler = @new mysqli(
+        $this->handler = new mysqli(
             $this->hostname,
             $this->username,
             $this->password,
-            $this->database
+            $this->database,
         );
 
-        try {
-            // Throw an error message if not connected
-            if ($this->handler->connect_error) {
-                throw new \Exception("Error Database Connection : " . $this->handler->connect_error);
-            }
-        } catch (Exception $e) {
-            $this->error = $e->getMessage();
-            die($this->error);
+        // Check for connection errors
+        if ($this->handler->connect_error) {
+            $this->error = "Database Connection Error: " . $this->handler->connect_error;
+            throw new \Exception($this->error);
         }
+
+        // Set default charset to utf8mb4
+        $this->set_charset("utf8mb4");
 
     }
 
@@ -142,7 +141,7 @@ class MySQLer
      * @param  array     $data MySQL server connection information
      * @return object          Instance of unique object
      */
-    public static function getInstance($data)
+    public static function getInstance(array|string $data): self
     {
         if (is_null(self::$_instance)) {
             self::$_instance = new self($data);
@@ -160,6 +159,11 @@ class MySQLer
     public function query($query)
     {
         $this->result = $this->handler->query($query);
+
+        if ($this->result === false) {
+            // Handle query error (e.g., log the error, throw an exception, etc.)
+            throw new Exception('Query error: ' . $this->handler->error);
+        }
 
         if (is_object($this->result)) {
             $this->count = $this->result->num_rows;
@@ -285,7 +289,7 @@ class MySQLer
      * @param  string                $cols     Columns to be selected 
      * @return                                 Make a query to the database
      */
-    public function select($table, $contents = '', $order = '', $limit = '', $like = false, $operand = 'AND', $cols = '*' )
+    public function select($table, $contents = '', $cols = '*', $order = '', $limit = '', $like = false, $operand = 'AND' )
     {
         // Catch Exceptions
         if (trim($table) == '') {
@@ -368,6 +372,15 @@ class MySQLer
 
         $query = substr($query, 0, -5);
         return $this->query($query);
+    }
+
+    public function set_charset($charset)
+    {
+        // Set the character set for the database connection
+        if (!$this->handler->set_charset($charset)) {
+            $this->error = "Error setting charset: " . $this->handler->error;
+            throw new \Exception($this->error);
+        }
     }
 
     /**
