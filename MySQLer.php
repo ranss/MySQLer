@@ -181,6 +181,12 @@ class MySQLer
      */
     public function results($mode = 'both')
     {
+
+        // If there's no result set, return an empty array
+        if (!$this->result) {
+            return [];
+        }
+
         switch ($mode) {
             case 'assoc':
                 $mode = MYSQLI_ASSOC;
@@ -236,13 +242,19 @@ class MySQLer
             if (in_array($column, $excluded)) {
                 continue;
             }
+
+            $content = $this->handler->real_escape_string($content);
             $query .= "`{$column}` = '{$content}', ";
         
         }
 
         $query = trim($query, ', ');
-        return $this->query($query);
+
+        $result = $this->query($query);
+    
+        return $result !== false;
     }
+    
 
     /**
      * Deletes a record from the database
@@ -255,26 +267,47 @@ class MySQLer
      */
     public function delete($table, $contents = '', $limit = '', $like = false)
     {
+        // Ensure $contents is an array and not empty
+        if (empty($contents) || !is_array($contents)) {
+            throw new InvalidArgumentException("Invalid or empty conditions provided for delete operation.");
+        }
+    
+        // Start constructing the DELETE query
         $query = "DELETE FROM `{$table}` WHERE ";
-        
-        if(is_array($contents) && $contents != '') {
-
-            foreach ($contents as $column => $content) {
-                if (true === boolval($like)) {
-                    $query .= "`{$column}` LIKE '%{$content}%' AND ";
-                } else {
-                    $query .= "`{$column}` = '{$content}' AND ";
-                }
+    
+        // Sanitize and prepare conditions
+        $conditions = [];
+        foreach ($contents as $column => $content) {
+            // Trim any leading/trailing spaces and escape the content to prevent SQL injection
+            $content = $this->handler->real_escape_string(trim($content));
+    
+            // If LIKE is enabled, use LIKE, otherwise use equality
+            if ($like) {
+                $conditions[] = "`{$column}` LIKE '%{$content}%'";
+            } else {
+                $conditions[] = "`{$column}` = '{$content}'";
             }
-            $query = substr($query, 0, -5);
-
         }
-
+    
+        // Join the conditions with AND
+        $query .= implode(" AND ", $conditions);
+    
+        // Apply LIMIT if provided
         if (intval($limit) >= 1) {
-            $query .= ' LIMIT ' . $limit;
+            $query .= ' LIMIT ' . intval($limit);  // Ensure limit is an integer
         }
-        
-        return $this->query($query);
+    
+        // Execute the query and return the result
+        $this->query($query);
+    
+        // Check if any rows were affected by the delete query
+        if ($this->handler->affected_rows > 0) {
+            // At least one row was deleted
+            return true;
+        } else {
+            // No rows were deleted
+            return false;
+        }
     }
 
     /**
@@ -289,45 +322,64 @@ class MySQLer
      * @param  string                $cols     Columns to be selected 
      * @return                                 Make a query to the database
      */
-    public function select($table, $contents = '', $cols = '*', $order = '', $limit = '', $like = false, $operand = 'AND' )
+    public function select($table, $contents = '', $cols = '*', $order = '', $limit = '', $like = false, $operand = 'AND')
     {
-        // Catch Exceptions
-        if (trim($table) == '') {
-            return false;
+        // Validate table name
+        if (empty(trim($table))) {
+            return false; // Table name is required
         }
-
+    
+        // Start constructing the SELECT query
         $query = "SELECT {$cols} FROM `{$table}` WHERE ";
-        
-        if (is_array($contents) && ! empty($contents)) {
-
+    
+        // Check if conditions are provided
+        if (is_array($contents) && !empty($contents)) {
+            $conditions = [];
+            
             foreach ($contents as $column => $content) {
+                // Escape the content for safety
+                $content = $this->handler->real_escape_string(trim($content));
                 
-                if (true === boolval($like)) {
-                    $query .= "`{$column}` LIKE '%{$content}%' {$operand} ";
+                // If LIKE is enabled, use LIKE, otherwise use equality
+                if ($like) {
+                    $conditions[] = "`{$column}` LIKE '%{$content}%'";
                 } else {
-                    $query .= "`{$column}` = '{$content}' {$operand} ";
+                    $conditions[] = "`{$column}` = '{$content}'";
                 }
             }
-            $query = substr($query, 0, -(mb_strlen($operand) + 2));
-
+    
+            // Join all conditions with the provided operand (AND/OR)
+            $query .= implode(" {$operand} ", $conditions);
         } else {
-            $query = substr($query, 0, -6);
+            // No conditions provided, omit WHERE clause
+            $query = substr($query, 0, -6);  // Remove ' WHERE ' part
         }
-
-        if ($order != '') {
+    
+        // Add ORDER BY if provided
+        if ($order) {
             $query .= ' ORDER BY ' . $order;
         }
-
-        if ($limit != '') {
-            $query .= ' LIMIT ' . $limit;
+    
+        // Add LIMIT if provided
+        if ($limit) {
+            $query .= ' LIMIT ' . intval($limit);  // Ensure limit is an integer
         }
+    
 
+        return $query;
+        // Execute the query
         $result = $this->query($query);
-        
-        if(is_array($result))
-            return $result;
-
-        return array();
+    
+        // Check if the result is an array (successful query)
+        if (is_array($result)) {
+            return $result;  // Return the query result as an array
+        }
+    
+        // If query fails, log the error or handle it as needed
+        error_log("SELECT query failed: " . $this->handler->error);
+    
+        // Return an empty array if no results or query failed
+        return [];
     }
 
     /**
