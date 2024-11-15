@@ -365,8 +365,6 @@ class MySQLer
             $query .= ' LIMIT ' . intval($limit);  // Ensure limit is an integer
         }
     
-
-        return $query;
         // Execute the query
         $result = $this->query($query);
     
@@ -387,43 +385,59 @@ class MySQLer
      * 
      * @param  string               $table    Table name to be updated
      * @param  array                $contents Content to be add instead of old
-     * @param  arrat                $searches Content to be searched and replaced
+     * @param  array                $searches Content to be searched and replaced
      * @param  string               $excluded Excluded columns
-     * @return                      Make an update query
+     * @return bool
      */
-    public function update($table, $contents, $searches, $excluded = '')
+    public function update($table, $contents, $searches, $excluded = [])
     {
-        // Check if all variable content has been set correctly.
+        // 1. Check if all variable content has been set correctly.
         if (empty(trim($table)) || !is_array($contents) || !is_array($searches)) {
             return false;
         }
 
+        // 2. Set up the default excluded columns.
         if ($excluded == '') {
             $excluded = array();
         }
 
+        // 3. Add any specific exclusions to prevent them from being included in the update.
         array_push($excluded, 'MAX_FILE_SIZE');
         
+        // 4. Begin constructing the SQL update query.
         $query = "UPDATE `{$table}` SET ";
         
+        // 5. Loop through the contents array to add each column and value to the SET part of the query.
         foreach ($contents as $column => $content) {
-            
             if (in_array($column, $excluded)) {
-                continue;
+                continue;  // Skip any columns that are in the excluded list.
             }
             $query .= "`{$column}` = '{$content}', ";
         }
         
+        // 6. Trim the trailing comma from the SET clause.
         $query = substr($query, 0, -2);
         
+        // 7. Start building the WHERE clause.
         $query .= ' WHERE ';
         
+        // 8. Loop through the searches array to build the conditions in the WHERE clause.
         foreach ($searches as $column => $search) {
             $query .= "`{$column}` = '{$search}' AND ";
         }
 
+        // 9. Trim the trailing 'AND' from the WHERE clause.
         $query = substr($query, 0, -5);
-        return $this->query($query);
+
+        // 10. Execute the query and return the result.
+        $result = $this->query($query);
+        
+        if ($result && $this->handler->affected_rows > 0) {
+            return true;
+        }
+    
+        return false;
+        
     }
 
     public function set_charset($charset)
